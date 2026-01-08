@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>顺丰单号扫描录入系统（问题修复版）</title>
+  <!-- 引入Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入Font Awesome图标 -->
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  
+  <!-- 自定义配置 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#008CD6', // 顺丰蓝
+            success: '#00B42A', // 成功绿
+            warning: '#FF7D00', // 警告橙
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+  
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .scan-input-focus {
+        @apply focus:ring-2 focus:ring-primary/60 focus:border-primary outline-none;
+      }
+      .btn-hover {
+        @apply hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300;
+      }
+      .card-shadow {
+        @apply shadow-md hover:shadow-xl transition-shadow duration-500;
+      }
+      .pulse-animation {
+        @apply animate-pulse border-success/50 bg-success/5;
+      }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans" id="appBody">
+  <!-- 页面容器 -->
+  <div class="container mx-auto px-4 py-8 max-w-4xl">
+    <!-- 标题区域 -->
+    <header class="text-center mb-8">
+      <div class="flex justify-center items-center mb-2">
+        <i class="fa fa-truck text-primary text-3xl mr-3"></i>
+        <h1 class="text-[clamp(1.8rem,4vw,2.5rem)] font-bold text-gray-800">顺丰单号扫描录入</h1>
+      </div>
+      <p class="text-gray-600">点击页面+声音测试按钮激活声音，扫描后自动提交</p>
+    </header>
+
+    <!-- 核心扫描区域 -->
+    <div class="bg-white rounded-2xl p-8 card-shadow mb-8 border-t-4 border-primary">
+      <!-- 扫描状态提示 -->
+      <div id="scanStatus" class="text-center mb-6 py-3 rounded-lg bg-gray-50">
+        <i class="fa fa-info-circle text-primary mr-2"></i>
+        <span class="text-gray-700">点击页面+下方测试按钮，激活声音后扫描</span>
+      </div>
+
+      <!-- 扫描输入框（默认聚焦，支持自动识别提交） -->
+      <div class="mb-6">
+        <label for="waybillNumber" class="block text-gray-700 font-medium mb-2">
+          <i class="fa fa-barcode text-primary mr-1"></i>顺丰单号
+        </label>
+        <div class="relative">
+          <input 
+            type="text" 
+            id="waybillNumber" 
+            class="w-full px-4 py-3 border border-gray-300 rounded-lg scan-input-focus text-lg pl-10"
+            placeholder="扫描枪扫描或手动输入（SF+13位数字）"
+            autocomplete="off"
+            autocapitalize="off"
+          >
+          <i class="fa fa-qrcode absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+        </div>
+        <p class="text-xs text-gray-500 mt-1">支持格式：SF开头（不区分大小写）+13位数字（例：SF1234567890123）</p>
+      </div>
+
+      <!-- 新增：声音测试按钮 -->
+      <div class="mb-6 text-center">
+        <button id="soundTestBtn" class="bg-primary/10 text-primary px-4 py-2 rounded-lg text-sm hover:bg-primary/20 transition-colors">
+          <i class="fa fa-volume-up mr-1"></i>点击测试声音（激活授权）
+        </button>
+      </div>
+
+      <!-- 操作按钮组 -->
+      <div class="flex flex-wrap gap-3">
+        <button 
+          id="confirmBtn"
+          class="flex-1 min-w-[120px] bg-success text-white font-medium py-3 px-4 rounded-lg btn-hover flex items-center justify-center"
+        >
+          <i class="fa fa-check-circle mr-2"></i>确认录入
+        </button>
+        <button 
+          id="clearBtn"
+          class="flex-1 min-w-[120px] bg-gray-200 text-gray-700 font-medium py-3 px-4 rounded-lg btn-hover flex items-center justify-center"
+        >
+          <i class="fa fa-eraser mr-2"></i>清空输入
+        </button>
+        <button 
+          id="exportBtn"
+          class="flex-1 min-w-[120px] bg-primary text-white font-medium py-3 px-4 rounded-lg btn-hover flex items-center justify-center"
+        >
+          <i class="fa fa-download mr-2"></i>导出数据
+        </button>
+      </div>
+    </div>
+
+    <!-- 数据统计与记录区域 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <!-- 统计卡片1 -->
+      <div class="bg-white rounded-xl p-6 card-shadow">
+        <h3 class="text-gray-500 text-sm font-medium mb-1">今日录入总数</h3>
+        <div class="flex items-end">
+          <span id="todayCount" class="text-3xl font-bold text-primary">0</span>
+          <span class="text-gray-400 ml-1 mb-1">个</span>
+        </div>
+        <div class="mt-3 text-xs text-gray-500">
+          <i class="fa fa-calendar-o mr-1"></i>
+          <span id="todayDate"></span>
+        </div>
+      </div>
+      
+      <!-- 统计卡片2 -->
+      <div class="bg-white rounded-xl p-6 card-shadow">
+        <h3 class="text-gray-500 text-sm font-medium mb-1">累计录入总数</h3>
+        <div class="flex items-end">
+          <span id="totalCount" class="text-3xl font-bold text-primary">0</span>
+          <span class="text-gray-400 ml-1 mb-1">个</span>
+        </div>
+        <div class="mt-3 text-xs text-gray-500">
+          <i class="fa fa-history mr-1"></i>
+          <span>永久保存</span>
+        </div>
+      </div>
+      
+      <!-- 统计卡片3 -->
+      <div class="bg-white rounded-xl p-6 card-shadow">
+        <h3 class="text-gray-500 text-sm font-medium mb-1">重复拦截数</h3>
+        <div class="flex items-end">
+          <span id="duplicateCount" class="text-3xl font-bold text-warning">0</span>
+          <span class="text-gray-400 ml-1 mb-1">个</span>
+        </div>
+        <div class="mt-3 text-xs text-gray-500">
+          <i class="fa fa-shield mr-1"></i>
+          <span>自动去重</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 最近记录区域 -->
+    <div class="bg-white rounded-xl p-6 card-shadow">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold text-gray-800 flex items-center">
+          <i class="fa fa-list-alt text-primary mr-2"></i>最近录入记录
+        </h2>
+        <button 
+          id="clearAllBtn"
+          class="text-sm text-gray-500 hover:text-red-500 transition-colors"
+        >
+          <i class="fa fa-trash-o mr-1"></i>清空所有记录
+        </button>
+      </div>
+      
+      <div id="recordList" class="space-y-3 max-h-80 overflow-y-auto pr-2">
+        <!-- 记录将动态添加到这里 -->
+        <div class="text-gray-500 text-center py-10">
+          <i class="fa fa-barcode text-4xl mb-3 block text-gray-300"></i>
+          <p>暂无录入记录</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 成功提示音效（主+备用） -->
+  <audio id="successSound" preload="auto" volume="0.8">
+    <source src="./success.mp3" type="audio/mpeg">
+    <source src="success.mp3" type="audio/mpeg">
+    您的浏览器不支持音频播放
+  </audio>
+  <!-- 失败提示音效（主+备用） -->
+  <audio id="failSound" preload="auto" volume="0.8">
+    <source src="./fail.mp3" type="audio/mpeg">
+    <source src="./fail.mp3" type="audio/mpeg">
+    您的浏览器不支持音频播放
+  </audio>
+
+  <script>
+    // 全局变量 - 支持SF/sf开头+13位数字
+    const WAYBILL_REGEX = /^[sS][fF]\d{13}$/;
+    let waybillRecords = JSON.parse(localStorage.getItem('sfWaybillRecords') || '[]');
+    let duplicateCount = parseInt(localStorage.getItem('sfDuplicateCount') || '0');
+    let soundActivated = false; // 标记声音是否已激活
+
+    // 初始化页面
+    document.addEventListener('DOMContentLoaded', function() {
+      const waybillInput = document.getElementById('waybillNumber');
+      const confirmBtn = document.getElementById('confirmBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const exportBtn = document.getElementById('exportBtn');
+      const clearAllBtn = document.getElementById('clearAllBtn');
+      const scanStatus = document.getElementById('scanStatus');
+      const successSound = document.getElementById('successSound');
+      const failSound = document.getElementById('failSound');
+      const appBody = document.getElementById('appBody');
+      const soundTestBtn = document.getElementById('soundTestBtn');
+
+      // 设置今日日期
+      const today = new Date();
+      document.getElementById('todayDate').textContent = today.toLocaleDateString('zh-CN');
+
+      // 初始化统计数据
+      updateStatistics();
+      renderRecordList();
+      waybillInput.focus();
+
+      // 1. 页面点击激活声音
+      appBody.addEventListener('click', activateSound);
+
+      // 2. 声音测试按钮（强化激活）
+      soundTestBtn.addEventListener('click', function() {
+        activateSound();
+        // 测试播放成功音效
+        playSound(successSound, true);
+      });
+
+      // 3. 输入框变化监听：识别到完整单号自动提交（解决扫描枪不发Enter）
+      waybillInput.addEventListener('input', function() {
+        const value = waybillInput.value.trim();
+        if (WAYBILL_REGEX.test(value)) {
+          // 延迟500ms提交（避免扫描枪输入未完成）
+          setTimeout(() => {
+            if (WAYBILL_REGEX.test(waybillInput.value.trim())) {
+              processWaybill();
+            }
+          }, 500);
+        }
+      });
+
+      // 4. 扫描枪Enter键提交（兼容已设置的情况）
+      waybillInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          processWaybill();
+        }
+      });
+
+      // 确认录入按钮点击事件
+      confirmBtn.addEventListener('click', processWaybill);
+
+      // 清空输入按钮点击事件
+      clearBtn.addEventListener('click', function() {
+        waybillInput.value = '';
+        waybillInput.focus();
+        resetStatus();
+      });
+
+      // 导出数据按钮点击事件
+      exportBtn.addEventListener('click', exportRecords);
+
+      // 清空所有记录按钮点击事件
+      clearAllBtn.addEventListener('click', function() {
+        if (confirm('确定要清空所有录入记录吗？此操作不可恢复！')) {
+          waybillRecords = [];
+          duplicateCount = 0;
+          localStorage.setItem('sfWaybillRecords', JSON.stringify(waybillRecords));
+          localStorage.setItem('sfDuplicateCount', '0');
+          updateStatistics();
+          renderRecordList();
+          showToast('所有记录已清空', 'info');
+        }
+      });
+
+      // 激活声音函数（强化版）
+      function activateSound() {
+        if (!soundActivated) {
+          try {
+            // 尝试播放极短静音获取授权
+            successSound.currentTime = 0;
+            successSound.volume = 0.01;
+            successSound.play().then(() => {
+              soundActivated = true;
+              successSound.pause();
+              successSound.volume = 0.8;
+              showStatus('声音已激活，扫描单号自动提交', 'success');
+            }).catch((error) => {
+              soundActivated = true;
+              showStatus('声音授权失败，可正常录入但无提示音', 'warning');
+              console.log('声音授权失败:', error);
+            });
+          } catch (error) {
+            soundActivated = true;
+            showStatus('声音授权失败，可正常录入但无提示音', 'warning');
+          }
+        }
+      }
+
+      // 处理单号录入
+      function processWaybill() {
+        const waybillNumber = waybillInput.value.trim();
+        
+        // 格式错误
+        if (!WAYBILL_REGEX.test(waybillNumber)) {
+          showStatus('扫描失败：单号格式不正确（需SF开头+13位数字）', 'error');
+          playSound(failSound);
+          waybillInput.select();
+          return;
+        }
+
+        // 统一格式为大写SF
+        const standardWaybill = waybillNumber.toUpperCase();
+
+        // 重复录入
+        if (isWaybillDuplicate(standardWaybill)) {
+          showStatus(`扫描失败：单号 ${standardWaybill} 已重复录入`, 'warning');
+          playSound(failSound);
+          waybillInput.select();
+          return;
+        }
+
+        // 成功录入
+        const newRecord = {
+          id: Date.now(),
+          number: standardWaybill,
+          date: today.toLocaleDateString('zh-CN'),
+          time: today.toLocaleTimeString('zh-CN'),
+          timestamp: today.getTime()
+        };
+
+        waybillRecords.unshift(newRecord);
+        localStorage.setItem('sfWaybillRecords', JSON.stringify(waybillRecords));
+
+        playSound(successSound);
+        showStatus(`扫描成功：单号 ${standardWaybill} 已录入`, 'success');
+        updateStatistics();
+        renderRecordList();
+        waybillInput.value = '';
+        waybillInput.focus();
+
+        setTimeout(resetStatus, 3000);
+      }
+
+      // 验证单号是否重复
+      function isWaybillDuplicate(number) {
+        return waybillRecords.some(record => record.number === number);
+      }
+
+      // 播放音效（支持测试模式）
+      function playSound(audioElement, isTest = false) {
+        try {
+          audioElement.currentTime = 0;
+          audioElement.play().catch(error => {
+            console.log('音频播放失败:', error);
+            if (!isTest) {
+              const soundType = audioElement === successSound ? '成功' : '失败';
+              showToast(`扫描${soundType}，但浏览器限制音频播放`, 'info');
+            } else {
+              showToast('声音测试失败，请检查浏览器权限', 'warning');
+            }
+          });
+        } catch (error) {
+          console.log('音频播放异常:', error);
+          if (isTest) {
+            showToast('声音测试失败，请检查浏览器权限', 'warning');
+          }
+        }
+      }
+
+      // 显示状态提示
+      function showStatus(message, type = 'info') {
+        scanStatus.innerHTML = '';
+        
+        let iconClass = 'fa-info-circle';
+        let bgClass = 'bg-gray-50';
+        let textClass = 'text-gray-700';
+        
+        switch(type) {
+          case 'success':
+            iconClass = 'fa-check-circle';
+            bgClass = 'bg-success/10 pulse-animation';
+            textClass = 'text-success';
+            break;
+          case 'error':
+            iconClass = 'fa-exclamation-circle';
+            bgClass = 'bg-red-100';
+            textClass = 'text-red-600';
+            break;
+          case 'warning':
+            iconClass = 'fa-exclamation-triangle';
+            bgClass = 'bg-warning/10';
+            textClass = 'text-warning';
+            break;
+        }
+        
+        scanStatus.className = `text-center mb-6 py-3 rounded-lg ${bgClass}`;
+        scanStatus.innerHTML = `<i class="fa ${iconClass} ${textClass} mr-2"></i><span class="${textClass}">${message}</span>`;
+      }
+
+      // 重置状态提示
+      function resetStatus() {
+        if (soundActivated) {
+          showStatus('准备就绪，扫描单号自动提交');
+        } else {
+          showStatus('点击页面+测试按钮，激活声音后扫描');
+        }
+      }
+
+      // 更新统计数据
+      function updateStatistics() {
+        const todayDateStr = today.toLocaleDateString('zh-CN');
+        const todayRecords = waybillRecords.filter(record => record.date === todayDateStr);
+        document.getElementById('todayCount').textContent = todayRecords.length;
+        document.getElementById('totalCount').textContent = waybillRecords.length;
+        document.getElementById('duplicateCount').textContent = duplicateCount;
+      }
+
+      // 渲染记录列表
+      function renderRecordList() {
+        const recordList = document.getElementById('recordList');
+        
+        if (waybillRecords.length === 0) {
+          recordList.innerHTML = `
+            <div class="text-gray-500 text-center py-10">
+              <i class="fa fa-barcode text-4xl mb-3 block text-gray-300"></i>
+              <p>暂无录入记录</p>
+            </div>
+          `;
+          return;
+        }
+
+        const recentRecords = waybillRecords.slice(0, 10);
+        recordList.innerHTML = recentRecords.map(record => `
+          <div class="flex justify-between items-center p-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 rounded-lg transition-colors">
+            <div>
+              <div class="font-medium text-gray-800">${record.number}</div>
+              <div class="text-xs text-gray-500 mt-1">
+                <i class="fa fa-clock-o mr-1"></i>${record.date} ${record.time}
+              </div>
+            </div>
+            <button class="text-gray-400 hover:text-red-500 transition-colors" 
+                    onclick="deleteRecord(${record.id})">
+              <i class="fa fa-times"></i>
+            </button>
+          </div>
+        `).join('');
+      }
+
+      // 导出数据为CSV文件
+      function exportRecords() {
+        if (waybillRecords.length === 0) {
+          showToast('暂无数据可导出', 'warning');
+          return;
+        }
+
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "顺丰单号,日期,时间\n";
+        
+        waybillRecords.forEach(record => {
+          const row = `${record.number},${record.date},${record.time}\n`;
+          csvContent += row;
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `顺丰单号录入记录_${today.toLocaleDateString('zh-CN').replace(/\//g, '-')}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        showToast('数据导出成功', 'success');
+      }
+
+      // 显示提示框
+      function showToast(message, type = 'success') {
+        let toast = document.querySelector('.toast-notification');
+        if (toast) {
+          toast.remove();
+        }
+
+        toast = document.createElement('div');
+        let bgClass = 'bg-success';
+        
+        switch(type) {
+          case 'warning':
+            bgClass = 'bg-warning';
+            break;
+          case 'error':
+            bgClass = 'bg-red-500';
+            break;
+          case 'info':
+            bgClass = 'bg-primary';
+            break;
+        }
+        
+        toast.className = `toast-notification fixed bottom-4 left-1/2 transform -translate-x-1/2 ${bgClass} text-white px-4 py-2 rounded-lg shadow-lg flex items-center z-50`;
+        toast.innerHTML = `<i class="fa fa-check mr-2"></i>${message}`;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+          toast.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+          setTimeout(() => toast.remove(), 300);
+        }, 3000);
+      }
+
+      // 全局删除记录函数
+      window.deleteRecord = function(id) {
+        waybillRecords = waybillRecords.filter(record => record.id !== id);
+        localStorage.setItem('sfWaybillRecords', JSON.stringify(waybillRecords));
+        updateStatistics();
+        renderRecordList();
+        showToast('记录已删除', 'info');
+      }
+    });
+  </script>
+</body>
+</html>
